@@ -8,7 +8,6 @@ import sqlite3
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import os
-from motor.motor_asyncio import AsyncIOMotorClient
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -35,11 +34,6 @@ class Database:
         self.engine = create_engine(f'sqlite:///{db_path}')
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
-        self.client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017'))
-        self.db = self.client.aitouch_bot
-        self.users = self.db.users
-        self.contexts = self.db.contexts
-        self.system_prompts = self.db.system_prompts
 
     def get_connection(self):
         """Создает подключение к базе данных"""
@@ -951,32 +945,11 @@ class Database:
 
     async def update_system_prompt(self, prompt: str) -> bool:
         """Обновление системного промпта в базе данных"""
-        try:
-            await self.system_prompts.update_one(
-                {"type": "main"},
-                {
-                    "$set": {
-                        "prompt": prompt,
-                        "updated_at": datetime.now()
-                    }
-                },
-                upsert=True
-            )
-            return True
-        except Exception as e:
-            logger.error(f"❌ Ошибка при обновлении системного промпта в БД: {str(e)}")
-            return False
+        return False
 
     async def get_system_prompt(self) -> str:
         """Получение актуального системного промпта из базы данных"""
-        try:
-            prompt_doc = await self.system_prompts.find_one({"type": "main"})
-            if prompt_doc and prompt_doc.get("prompt"):
-                return prompt_doc["prompt"]
-            return None
-        except Exception as e:
-            logger.error(f"❌ Ошибка при получении системного промпта из БД: {str(e)}")
-            return None
+        return None
 
     def get_context(self, user_id: int) -> list:
         """Получает контекст сообщений пользователя"""

@@ -468,18 +468,18 @@ class ConversationContext:
         cutoff_date = datetime.now() - timedelta(days=days_back)
         
         # Получаем архивные записи
-        archive_cursor = self.db.context_archive.find({
-            "user_id": user_id,
-            "archived_at": {"$gte": cutoff_date}
-        }).sort("archived_at", -1)
+        # archive_cursor = self.db.context_archive.find({
+        #     "user_id": user_id,
+        #     "archived_at": {"$gte": cutoff_date}
+        # }).sort("archived_at", -1)
         
-        archived_messages = []
-        async for doc in archive_cursor:
-            archived_messages.extend(doc["messages"])
-            
+        # archived_messages = []
+        # async for doc in archive_cursor:
+        #     archived_messages.extend(doc["messages"])
+        
         # Объединяем с текущим контекстом
         current_context = self.contexts.get(user_id, [])
-        all_messages = archived_messages + current_context
+        all_messages = current_context  # Только локальный контекст
         
         # Фильтруем по дате
         filtered_messages = [
@@ -493,14 +493,15 @@ class ConversationContext:
         """Очистить контекст пользователя"""
         if user_id in self.contexts:
             del self.contexts[user_id]
-        await self.db.contexts.delete_one({"user_id": user_id})
+        # await self.db.contexts.delete_one({"user_id": user_id})
         
     async def cleanup_old_contexts(self, days: int = 30):
         """Очистить старые контексты"""
-        cutoff_date = datetime.now() - timedelta(days=days)
-        await self.db.contexts.delete_many({
-            "last_updated": {"$lt": cutoff_date}
-        })
+        # cutoff_date = datetime.now() - timedelta(days=days)
+        # await self.db.contexts.delete_many({
+        #     "last_updated": {"$lt": cutoff_date}
+        # })
+        pass
 
 class ImageGenerator:
     def __init__(self, api_token):
