@@ -23,6 +23,7 @@ import pathlib
 import time
 from collections import defaultdict
 import sqlite3
+from llm_provider import generate_response
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -905,64 +906,66 @@ class BratBot:
         )
         await update.message.reply_text(info_text)
 
-    async def get_model_response(self, messages: list) -> str:
-        """Получение ответа от модели Gemini"""
+    async def get_model_response(self, messages: list, user_id: int) -> str:
         try:
-            logger.info(f"📝 Начинаю обработку контекста из {len(messages)} сообщений")
-            
-            # Формируем промпт для модели
-            prompt = self.system_prompt + "\n\nИстория диалога:\n"
-            
-            # Если сообщений больше 20, создаем саммари для старых сообщений
-            if len(messages) > 20:
-                logger.info("📝 Создаю саммари для длинного контекста...")
-                
-                # Берем старые сообщения для саммари (все кроме последних 10)
-                old_messages = messages[:-10]
-                recent_messages = messages[-10:]
-                
-                logger.info(f"📊 Разделение контекста: {len(old_messages)} старых сообщений, {len(recent_messages)} новых")
-                
-                # Формируем текст для саммари
-                summary_prompt = "Сделай краткую выжимку из этого диалога, сохранив ключевые моменты и важные детали:\n\n"
-                for msg in old_messages:
+            logger.info(f"📝 Начинаю обработку контекста из {len(messages)} сообщений для user_id={user_id}")
+            # Получаем все саммари пользователя
+            all_summaries = []
+            if user_id:
+                all_summaries = self.db.get_all_summaries(user_id)
+            # Определяем, нужно ли создать новое саммари
+            block_size = 30
+            last_summarized_idx = 0
+            last_end = None
+            if all_summaries:
+                last_end = all_summaries[-1]['end_timestamp']
+                # last_end может быть None, если в базе что-то не так
+                for i, msg in enumerate(messages):
+                    msg_ts = msg.get('timestamp')
+                    if last_end and msg_ts and msg_ts > last_end:
+                        last_summarized_idx = i
+                        break
+            unsummarized = messages[last_summarized_idx: -10 if len(messages) > 10 else None]
+            if len(unsummarized) >= block_size:
+                logger.info(f"🟡 Новый блок для саммаризации: {len(unsummarized)} сообщений")
+                # Новый смысловой промпт для саммари:
+                summary_prompt = (
+                    "Прочитай диалог ниже и сделай краткое смысловое описание: \n"
+                    "- О чём спрашивал пользователь?\n"
+                    "- Какие задачи или вопросы поднимались?\n"
+                    "- Какие ответы и советы дал ассистент?\n"
+                    "- Не пересказывай всё подряд, выдели только суть и ключевые моменты, без лишних деталей.\n"
+                    "- Не копируй текст сообщений, а именно опиши, что происходило.\n\n"
+                )
+                for msg in unsummarized:
                     role = "Пользователь" if msg["role"] == "user" else "Ассистент"
                     summary_prompt += f"{role}: {msg['content']}\n"
-                
-                logger.info("🤖 Запрашиваю саммаризацию у модели...")
-                
-                # Получаем саммари от модели
-                summary_response = model.generate_content(summary_prompt)
-                summary = summary_response.text
-                
-                logger.info(f"✅ Получено саммари длиной {len(summary)} символов")
-                
-                # Добавляем саммари и последние сообщения в промпт
-                prompt += f"[Краткое содержание предыдущего диалога]\n{summary}\n\n"
-                prompt += "[Последние сообщения]\n"
-                for msg in recent_messages:
-                    role = "Пользователь" if msg["role"] == "user" else "Ассистент"
-                    prompt += f"{role}: {msg['content']}\n"
+                logger.info(f"[SUMMARIZATION] Промпт для саммаризации ({len(summary_prompt)} символов):\n{summary_prompt[:300]}...\n[...]")
+                # Используем ту же модель, что и для обычных ответов:
+                summary = generate_response(unsummarized, summary_prompt)
+                logger.info(f"[SUMMARIZATION] Саммари ({len(summary)} символов):\n{summary[:300]}...\n[...]")
+                await self.db.create_chat_summary(user_id, summary)
+                all_summaries = self.db.get_all_summaries(user_id)
             else:
-                # Если сообщений мало, просто добавляем их все
-                logger.info("📝 Контекст небольшой, использую все сообщения")
-                for msg in messages:
-                    role = "Пользователь" if msg["role"] == "user" else "Ассистент"
-                    prompt += f"{role}: {msg['content']}\n"
-            
-            logger.info(f"📤 Отправляю запрос модели (длина промпта: {len(prompt)} символов)")
-            logger.info(f"ПОЛНЫЙ ПРОМПТ:\n{prompt}")
-            
-            # Получаем ответ от модели
-            response = model.generate_content(prompt)
-            formatted_response = format_response(response.text)
-            
+                if all_summaries:
+                    logger.info(f"[PROMPT] Нет новых блоков для саммаризации. Используются саммари: {[i+1 for i in range(len(all_summaries))]}")
+                else:
+                    logger.info(f"[PROMPT] Нет саммари, используется только история сообщений.")
+            prompt = self.system_prompt + "\n\n"
+            for idx, summ in enumerate(all_summaries):
+                prompt += f"[Краткое содержание блока {idx+1}]\n{summ['summary']}\n\n"
+            last_msgs = messages[-10:] if len(messages) > 10 else messages
+            prompt += "[Последние сообщения]\n"
+            for msg in last_msgs:
+                role = "Пользователь" if msg["role"] == "user" else "Ассистент"
+                prompt += f"{role}: {msg['content']}\n"
+            logger.info(f"[LLM] Итоговый промпт ({len(prompt)} символов):\n{prompt}")
+            response = generate_response([], prompt)
+            formatted_response = format_response(response)
             logger.info(f"📥 Получен ответ от модели (длина: {len(formatted_response)} символов)")
-            
             return formatted_response
-            
         except Exception as e:
-            logger.error(f"❌ Ошибка при получении ответа от Gemini: {str(e)}")
+            logger.error(f"❌ Ошибка при получении ответа от LLM: {str(e)}")
             raise
 
     async def register(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1536,7 +1539,7 @@ class BratBot:
                     full_context.append({"role": "user", "content": context_message})
                     
                     # Получаем ответ от модели с полным контекстом
-                    response = await self.get_model_response(full_context)
+                    response = await self.get_model_response(full_context, user_id)
                     
                     if response:
                         # Добавляем ответ бота в контекст

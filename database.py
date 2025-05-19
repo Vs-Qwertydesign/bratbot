@@ -1019,4 +1019,31 @@ class Database:
                 return True
         except Exception as e:
             logger.error(f"Ошибка при обновлении системного промпта: {e}")
-            return False 
+            return False
+
+    def get_all_summaries(self, user_id: int) -> list:
+        """Получает все саммари пользователя по user_id, отсортированные по времени создания."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT summary, start_timestamp, end_timestamp, created_at
+                    FROM chat_summaries
+                    WHERE user_id = ?
+                    ORDER BY created_at ASC
+                    """,
+                    (user_id,)
+                )
+                return [
+                    {
+                        'summary': row[0],
+                        'start_timestamp': row[1],
+                        'end_timestamp': row[2],
+                        'created_at': row[3]
+                    }
+                    for row in cursor.fetchall()
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении всех саммари пользователя {user_id}: {e}")
+            return [] 
