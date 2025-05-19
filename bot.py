@@ -43,8 +43,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Устанавливаем уровень логирования на DEBUG
 
 # Инициализация Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')  # Основная модель для текста
 vision_model = genai.GenerativeModel('gemini-pro-vision')  # Модель для работы с изображениями и документами
 
 # Шаблоны для поиска
@@ -419,7 +417,7 @@ class ConversationContext:
                 
             try:
                 logger.info("🤖 Отправляю запрос на суммаризацию в Gemini")
-                response = model.generate_content(summary_prompt)
+                response = vision_model.generate_content(summary_prompt)
                 summary = response.text
                 logger.info(f"✅ Получен ответ от Gemini, длина саммари: {len(summary)} символов")
                 
@@ -787,7 +785,7 @@ class BratBot:
 
             # Инициализация FileHandler
             try:
-                self.file_handler = FileHandler(model)
+                self.file_handler = FileHandler(vision_model)
                 logger.info("✅ FileHandler успешно инициализирован")
             except Exception as e:
                 logger.error(f"❌ Ошибка инициализации FileHandler: {e}")
@@ -963,7 +961,7 @@ class BratBot:
                 role = "Пользователь" if msg["role"] == "user" else "Ассистент"
                 prompt += f"{role}: {msg['content']}\n"
             logger.info(f"[LLM] Итоговый промпт ({len(prompt)} символов):\n{prompt}")
-            response = generate_response([], prompt)
+            response = generate_response(last_msgs, prompt)
             formatted_response = format_response(response)
             logger.info(f"📥 Получен ответ от модели (длина: {len(formatted_response)} символов)")
             return formatted_response
