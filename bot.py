@@ -24,6 +24,7 @@ import time
 from collections import defaultdict
 import sqlite3
 from llm_provider import generate_response
+import openai
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -508,29 +509,31 @@ class ImageGenerator:
     def __init__(self, api_token):
         self.client = replicate.Client(api_token=api_token)
         self.model_version = "black-forest-labs/flux-schnell"
-        
+
     async def translate_prompt(self, prompt: str) -> str:
-        """Переводит промпт на английский и добавляет улучшающие модификаторы"""
+        """Переводит промпт на английский и добавляет улучшающие модификаторы через OpenAI"""
         try:
-            # Используем Gemini для перевода и улучшения промпта
-            system_prompt = """
-            Переведи текст на английский и добавь модификаторы. Верни ТОЛЬКО финальный промпт без объяснений.
-            Добавь в конец: high quality, detailed, sharp focus, professional photography, cinematic lighting, masterpiece, best quality
-            """
-            
-            response = model.generate_content(f"{system_prompt}\n\nТекст: {prompt}")
-            enhanced_prompt = response.text.strip()
-            
+            system_prompt = (
+                "Переведи текст на английский и добавь модификаторы. Верни ТОЛЬКО финальный промпт без объяснений. "
+                "Добавь в конец: high quality, detailed, sharp focus, professional photography, cinematic lighting, masterpiece, best quality"
+            )
+            response = openai.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+            enhanced_prompt = response.choices[0].message.content.strip()
             # Убираем лишние переносы строк и форматирование
             enhanced_prompt = re.sub(r'\s+', ' ', enhanced_prompt)
-            # Убираем звездочки и другие маркеры если они есть
             enhanced_prompt = re.sub(r'[\*\[\]#]', '', enhanced_prompt)
-            
-            logger.info(f"🔄 Промпт переведен и улучшен: {enhanced_prompt}")
+            logger.info(f"🔄 Промпт переведен и улучшен (OpenAI): {enhanced_prompt}")
             return enhanced_prompt
-            
         except Exception as e:
-            logger.error(f"❌ Ошибка при переводе промпта: {e}")
+            logger.error(f"❌ Ошибка при переводе промпта через OpenAI: {e}")
             # Если не удалось перевести, добавляем модификаторы к оригинальному тексту
             return f"{prompt}, high quality, detailed, sharp focus, professional photography, cinematic lighting, masterpiece, best quality"
     
