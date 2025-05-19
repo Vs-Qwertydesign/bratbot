@@ -25,6 +25,7 @@ from collections import defaultdict
 import sqlite3
 from llm_provider import generate_response
 import openai
+import httpx
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -511,13 +512,14 @@ class ImageGenerator:
         self.model_version = "black-forest-labs/flux-schnell"
 
     async def translate_prompt(self, prompt: str) -> str:
-        """Переводит промпт на английский и добавляет улучшающие модификаторы через OpenAI"""
+        """Переводит промпт на английский и добавляет улучшающие модификаторы через OpenAI только через прокси"""
         try:
             system_prompt = (
                 "Переведи текст на английский и добавь модификаторы. Верни ТОЛЬКО финальный промпт без объяснений. "
                 "Добавь в конец: high quality, detailed, sharp focus, professional photography, cinematic lighting, masterpiece, best quality"
             )
-            response = openai.chat.completions.create(
+            openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            response = openai_client.chat.completions.create(
                 model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -527,14 +529,12 @@ class ImageGenerator:
                 max_tokens=2000,
             )
             enhanced_prompt = response.choices[0].message.content.strip()
-            # Убираем лишние переносы строк и форматирование
             enhanced_prompt = re.sub(r'\s+', ' ', enhanced_prompt)
             enhanced_prompt = re.sub(r'[\*\[\]#]', '', enhanced_prompt)
             logger.info(f"🔄 Промпт переведен и улучшен (OpenAI): {enhanced_prompt}")
             return enhanced_prompt
         except Exception as e:
             logger.error(f"❌ Ошибка при переводе промпта через OpenAI: {e}")
-            # Если не удалось перевести, добавляем модификаторы к оригинальному тексту
             return f"{prompt}, high quality, detailed, sharp focus, professional photography, cinematic lighting, masterpiece, best quality"
     
     async def generate_image(self, prompt: str) -> str:

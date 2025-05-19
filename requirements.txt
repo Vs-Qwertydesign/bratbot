@@ -7,3 +7,5 @@ openai>=1.0.0
 SQLAlchemy==2.0.30
 greenlet==3.2.2
 aiosqlite==0.20.0 
+python-telegram-bot[socks]==20.7
+httpx[socks]
